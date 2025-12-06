@@ -27,23 +27,42 @@ export const ARCFARMIA_ABI = [
     type: "function",
   },
 
-  // dailySeedCropId() -> uint8
+  // getPlayer(address player) -> PlayerProfile (coins, xp, level, lastDailyClaim)
   {
-    inputs: [],
-    name: "dailySeedCropId",
+    inputs: [
+      { internalType: "address", name: "player", type: "address" },
+    ],
+    name: "getPlayer",
     outputs: [
-      { internalType: "uint8", name: "", type: "uint8" },
+      {
+        components: [
+          { internalType: "uint256", name: "coins", type: "uint256" },
+          { internalType: "uint256", name: "xp", type: "uint256" },
+          { internalType: "uint16", name: "level", type: "uint16" },
+          {
+            internalType: "uint64",
+            name: "lastDailyClaim",
+            type: "uint64",
+          },
+        ],
+        internalType: "struct ArcFarmia.PlayerProfile",
+        name: "",
+        type: "tuple",
+      },
     ],
     stateMutability: "view",
     type: "function",
   },
 
-  // dailySeedAmount() -> uint16
+  // getSeedBalance(address player, uint8 cropId) -> uint256
   {
-    inputs: [],
-    name: "dailySeedAmount",
+    inputs: [
+      { internalType: "address", name: "player", type: "address" },
+      { internalType: "uint8", name: "cropId", type: "uint8" },
+    ],
+    name: "getSeedBalance",
     outputs: [
-      { internalType: "uint16", name: "", type: "uint16" },
+      { internalType: "uint256", name: "", type: "uint256" },
     ],
     stateMutability: "view",
     type: "function",

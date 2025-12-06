@@ -167,6 +167,10 @@ function App() {
   const [field, setField] = useState(createInitialField);
   const [barnSlots, setBarnSlots] = useState(createInitialBarn);
   const [arcCoins, setArcCoins] = useState(50);
+
+  // carteira conectada
+  const [walletAddress, setWalletAddress] = useState(null);
+
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(0);
   const [nextLevelXp, setNextLevelXp] = useState(() => xpForLevelUp(0));
@@ -209,6 +213,84 @@ function App() {
     for (const a of ANIMALS) m[a.id] = a;
     return m;
   }, []);
+
+    // Carrega coins + seeds direto do contrato ArcFarmia para a carteira conectada
+  async function loadGameStateFromChain(playerAddress) {
+    try {
+      if (!playerAddress || typeof window === "undefined" || !window.ethereum) {
+        return;
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+
+      const contract = new Contract(
+        ARCFARMIA_ADDRESS,
+        ARCFARMIA_ABI,
+        provider
+      );
+
+      // 1) Perfil do jogador (coins, xp, level, lastDailyClaim)
+      const profile = await contract.getPlayer(playerAddress);
+      const coins = Number(profile.coins);
+      setArcCoins(coins);
+
+      // 2) Seeds por tipo (wheat/corn/carrot)
+      const newSeeds = {};
+      for (const [cropKey, cropId] of Object.entries(CROP_ID_ONCHAIN)) {
+        const balance = await contract.getSeedBalance(playerAddress, cropId);
+        newSeeds[cropKey] = Number(balance);
+      }
+      setSeeds(newSeeds);
+
+      console.log("Estado carregado da chain:", {
+        coins,
+        seeds: newSeeds,
+      });
+    } catch (err) {
+      console.error("Erro ao carregar dados on-chain:", err);
+      // se der erro, não quebra o jogo
+    }
+  }
+
+  // Conectar a carteira e carregar progresso on-chain
+  async function connectWallet() {
+    try {
+      if (typeof window === "undefined" || !window.ethereum) {
+        alert("Carteira Web3 não encontrada (instale MetaMask ou use Rabby).");
+        return;
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+      const accounts = await provider.send("eth_requestAccounts", []);
+      if (!accounts || accounts.length === 0) {
+        alert("Nenhuma conta encontrada na carteira.");
+        return;
+      }
+
+      const address = accounts[0];
+      setWalletAddress(address);
+
+      // carrega o progresso dessa carteira a partir da chain
+      await loadGameStateFromChain(address);
+
+      alert("Carteira conectada: " + address);
+    } catch (err) {
+      console.error("Erro ao conectar carteira:", err);
+      alert("Erro ao conectar carteira. Veja o console (F12) para detalhes.");
+    }
+  }
+
+  function disconnectWallet() {
+    setWalletAddress(null);
+    // opcional: reset visual quando desconectar
+    setArcCoins(50);
+    setSeeds({
+      wheat: 4,
+      corn: 3,
+      carrot: 2,
+    });
+    alert("Carteira desconectada do jogo.");
+  }
 
   useEffect(() => {
     const id = setInterval(() => setGreeting(getGreeting()), 60_000);
@@ -414,25 +496,27 @@ function App() {
 }
 
   // shop actions
-  async function buySeed(id) {
+    async function buySeed(id) {
     const crop = cropsById[id];
     if (!crop) return;
 
+    if (!walletAddress) {
+      alert("Conecte sua carteira antes de comprar sementes.");
+      return;
+    }
+
     if (arcCoins < crop.buyPrice) {
-      alert("Você não tem ArcCoins suficientes no jogo para comprar essa semente.");
+      alert("Você não tem ArcCoins suficientes para comprar essa semente.");
       return;
     }
 
     try {
-      // 1) chama o contrato na Arc com amount = 1
+      // chama o contrato na Arc com amount = 1
       await buySeedOnChain(id, 1);
 
-      // 2) se deu certo on-chain, atualiza o estado do jogo
-      setArcCoins((c) => c - crop.buyPrice);
-      setSeeds((old) => ({
-        ...old,
-        [id]: (old[id] ?? 0) + 1,
-      }));
+      // depois que a tx confirma, recarrega tudo da chain
+      await loadGameStateFromChain(walletAddress);
+
       playSound(sfxShop, 0.5);
     } catch (err) {
       console.error("Erro ao comprar semente:", err);
@@ -440,71 +524,77 @@ function App() {
     }
   }
 
-  async function buySeedPack(id) {
+    async function buySeedPack(id) {
     const crop = cropsById[id];
     if (!crop) return;
+
+    if (!walletAddress) {
+      alert("Conecte sua carteira antes de comprar seeds.");
+      return;
+    }
 
     const totalPrice = crop.buyPrice * 10;
 
     if (arcCoins < totalPrice) {
-      alert("Você não tem ArcCoins suficientes no jogo para comprar o pack x10.");
+      alert("Você não tem ArcCoins suficientes para comprar o pack x10.");
       return;
     }
 
     try {
-      // 1) chama o contrato na Arc com amount = 10
+      // compra 10 seeds no contrato
       await buySeedOnChain(id, 10);
 
-      // 2) se deu certo on-chain, atualiza o estado do jogo
-      setArcCoins((c) => c - totalPrice);
-      setSeeds((old) => ({
-        ...old,
-        [id]: (old[id] ?? 0) + 10,
-      }));
+      // recarrega estado real da chain
+      await loadGameStateFromChain(walletAddress);
+
       playSound(sfxShop, 0.5);
     } catch (err) {
       console.error("Erro ao comprar pack de sementes:", err);
       alert("Erro ao comprar pack x10 na rede Arc. Veja o console (F12).");
     }
   }
-      async function claimDailySeedsOnChain() {
-  try {
-    if (typeof window === "undefined") return;
-    const { ethereum } = window;
 
-    if (!ethereum) {
-      alert("Carteira Web3 não encontrada (instale MetaMask ou use Rabby).");
-      return;
+        async function claimDailySeedsOnChain() {
+    try {
+      if (!walletAddress) {
+        alert("Conecte sua carteira antes de pegar o daily.");
+        return;
+      }
+
+      if (typeof window === "undefined" || !window.ethereum) {
+        alert("Carteira Web3 não encontrada (instale MetaMask ou use Rabby).");
+        return;
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      const contract = new Contract(
+        ARCFARMIA_ADDRESS,
+        ARCFARMIA_ABI,
+        signer
+      );
+
+      const tx = await contract.claimDailySeeds();
+      console.log("Tx enviada (claimDailySeeds):", tx.hash);
+      alert("Transação de daily enviada para a Arc Testnet. Aguardando confirmação...");
+
+      await tx.wait();
+      console.log("Tx confirmada (claimDailySeeds).");
+
+      // depois da confirmação, recarrega coins + seeds dessa carteira
+      await loadGameStateFromChain(walletAddress);
+
+      alert("Daily reivindicado na Arc! 🎁 (inventário atualizado a partir da chain)");
+    } catch (err) {
+      console.error("Erro no claimDailySeeds:", err);
+      const raw =
+        (err && (err.shortMessage || err.reason || err.message)) ||
+        String(err);
+      alert("Erro ao reivindicar o daily na Arc:\n\n" + raw);
     }
-
-    const provider = new BrowserProvider(ethereum);
-    const signer = await provider.getSigner();
-
-    const contract = new Contract(
-      ARCFARMIA_ADDRESS,
-      ARCFARMIA_ABI,
-      signer
-    );
-
-    // 👉 aqui a gente só chama a função do contrato
-    const tx = await contract.claimDailySeeds();
-    console.log("Tx enviada (claimDailySeeds):", tx.hash);
-    alert("Transação de daily enviada para a Arc Testnet. Aguardando confirmação...");
-
-    await tx.wait();
-    console.log("Tx confirmada (claimDailySeeds).");
-
-    // Por enquanto não sabemos qual crop/quantidade on-chain,
-    // então só avisamos o jogador. Depois ligamos isso no estado do jogo.
-    alert("Daily reivindicado na Arc! 🎁 (UI do jogo ainda não soma as sementes automaticamente; vamos ajustar isso depois.)");
-  } catch (err) {
-    console.error("Erro no claimDailySeeds:", err);
-    const raw =
-      (err && (err.shortMessage || err.reason || err.message)) ||
-      String(err);
-    alert("Erro ao reivindicar o daily na Arc:\n\n" + raw);
   }
-}
+
 
 
 
@@ -738,7 +828,7 @@ function App() {
               claimedQuests={claimedQuests}
               onClaim={handleClaimQuest}
             />
-            <ShopPanel
+              <ShopPanel
               crops={CROPS}
               arcCoins={arcCoins}
               harvest={harvest}
@@ -749,7 +839,11 @@ function App() {
               onClaimDailySeeds={claimDailySeedsOnChain}
               onSellHarvest={sellHarvest}
               onSellProduce={sellProduce}
+              walletAddress={walletAddress}
+              onConnectWallet={connectWallet}
+              onDisconnectWallet={disconnectWallet}
             />
+
             <BarnPanel
               barnSlots={barnSlots}
               animalsById={animalsById}
@@ -908,16 +1002,44 @@ function ShopPanel({
   onClaimDailySeeds,
   onSellHarvest,
   onSellProduce,
+  walletAddress,
+  onConnectWallet,
+  onDisconnectWallet,
 }) {
+
   return (
-    <div className="panel shop">
+
+        <div className="panel shop">
       <h3>Farm Shop</h3>
       <div className="shop-coins">Arc coins: {arcCoins}</div>
 
-            <div style={{ marginBottom: 8 }}>
-        <button onClick={onClaimDailySeeds}>
-          Claim daily seeds (on-chain)
-        </button>
+      <div style={{ marginBottom: 8 }}>
+        {walletAddress ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <span>
+              Wallet:{" "}
+              {walletAddress.slice(0, 6) + "..." + walletAddress.slice(-4)}
+            </span>
+            <button onClick={onDisconnectWallet}>Disconnect</button>
+            <button onClick={onClaimDailySeeds}>
+              Claim daily seeds (on-chain)
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onConnectWallet}>Connect wallet</button>
+            <button onClick={onClaimDailySeeds} disabled>
+              Claim daily seeds (on-chain)
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="shop-section">
