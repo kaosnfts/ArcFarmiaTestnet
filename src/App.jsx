@@ -14,9 +14,14 @@ import sfxHarvest from "./assets/sfx_harvest.wav";
 import sfxEgg from "./assets/sfx_egg.wav";
 import sfxMilk from "./assets/sfx_milk.wav";
 import sfxShop from "./assets/sfx_shop.wav";
+import sfxQuest from "./assets/sfx_quest.wav";
+
 import { BrowserProvider, Contract } from "ethers";
 import { ARCFARMIA_ADDRESS, ARCFARMIA_ABI } from "./contractConfig";
-import sfxQuest from "./assets/sfx_quest.wav";
+import {
+  SAVE_CONTRACT_ADDRESS,
+  SAVE_CONTRACT_ABI,
+} from "./saveConfig";
 
 const GRID_COLS = 8;
 const GRID_ROWS = 6;
@@ -57,8 +62,8 @@ const CROPS = [
 ];
 
 const CROP_ID_ONCHAIN = {
-  wheat: 1,  // ID do trigo no contrato
-  corn: 2,   // ID do milho no contrato
+  wheat: 1, // ID do trigo no contrato
+  corn: 2, // ID do milho no contrato
   carrot: 3, // ID da cenoura no contrato
 };
 
@@ -214,41 +219,153 @@ function App() {
     return m;
   }, []);
 
-    // Carrega coins + seeds direto do contrato ArcFarmia para a carteira conectada
-  async function loadGameStateFromChain(playerAddress) {
+  // Lê o progresso salvo no contrato ArcFarmiaProgress (progresso on-chain)
+  async function loadGameStateFromChain(playerAddress, options = {}) {
+    const { showAlert = false } = options;
+
     try {
       if (!playerAddress || typeof window === "undefined" || !window.ethereum) {
         return;
       }
 
       const provider = new BrowserProvider(window.ethereum);
-
       const contract = new Contract(
-        ARCFARMIA_ADDRESS,
-        ARCFARMIA_ABI,
+        SAVE_CONTRACT_ADDRESS,
+        SAVE_CONTRACT_ABI,
         provider
       );
 
-      // 1) Perfil do jogador (coins, xp, level, lastDailyClaim)
-      const profile = await contract.getPlayer(playerAddress);
-      const coins = Number(profile.coins);
-      setArcCoins(coins);
+      const data = await contract.getPlayer(playerAddress);
 
-      // 2) Seeds por tipo (wheat/corn/carrot)
-      const newSeeds = {};
-      for (const [cropKey, cropId] of Object.entries(CROP_ID_ONCHAIN)) {
-        const balance = await contract.getSeedBalance(playerAddress, cropId);
-        newSeeds[cropKey] = Number(balance);
+      // ethers v6: pode acessar por nome ou índice
+      const coins = Number(data.coins ?? data[0] ?? 0);
+      const xpChain = Number(data.xp ?? data[1] ?? 0);
+      const levelChain = Number(data.level ?? data[2] ?? 0);
+      const wheatSeeds = Number(data.wheatSeeds ?? data[3] ?? 0);
+      const cornSeeds = Number(data.cornSeeds ?? data[4] ?? 0);
+      const carrotSeeds = Number(data.carrotSeeds ?? data[5] ?? 0);
+      const eggsChain = Number(data.eggs ?? data[6] ?? 0);
+      const milkChain = Number(data.milk ?? data[7] ?? 0);
+      const chickensChain = Number(data.chickens ?? data[8] ?? 0);
+      const cowsChain = Number(data.cows ?? data[9] ?? 0);
+
+      const isEmpty =
+        coins === 0 &&
+        xpChain === 0 &&
+        levelChain === 0 &&
+        wheatSeeds === 0 &&
+        cornSeeds === 0 &&
+        carrotSeeds === 0 &&
+        eggsChain === 0 &&
+        milkChain === 0 &&
+        chickensChain === 0 &&
+        cowsChain === 0;
+
+      if (isEmpty) {
+        // nunca salvou nada: mantém defaults locais
+        if (showAlert) {
+          alert(
+            "Nenhum progresso salvo encontrado na Arc para essa carteira.\n" +
+              "Vamos começar do zero. Use o botão 💾 Save to blockchain para gravar."
+          );
+        }
+        return;
       }
-      setSeeds(newSeeds);
 
-      console.log("Estado carregado da chain:", {
-        coins,
-        seeds: newSeeds,
+      // aplica no estado do jogo
+      setArcCoins(coins || 50);
+      setXp(xpChain);
+      setLevel(levelChain);
+      setNextLevelXp(xpForLevelUp(levelChain));
+
+      setSeeds({
+        wheat: wheatSeeds,
+        corn: cornSeeds,
+        carrot: carrotSeeds,
       });
+
+      setProduce({
+        egg: eggsChain,
+        milk: milkChain,
+      });
+
+      console.log("Progresso carregado da Arc:", {
+        coins,
+        xp: xpChain,
+        level: levelChain,
+        seeds: { wheatSeeds, cornSeeds, carrotSeeds },
+        eggs: eggsChain,
+        milk: milkChain,
+        chickens: chickensChain,
+        cows: cowsChain,
+      });
+
+      if (showAlert) {
+        alert("Progresso carregado do contrato ArcFarmiaProgress ✅");
+      }
     } catch (err) {
-      console.error("Erro ao carregar dados on-chain:", err);
-      // se der erro, não quebra o jogo
+      console.warn(
+        "Falha ao ler progresso salvo para essa carteira (talvez ainda não exista).",
+        err
+      );
+      if (showAlert) {
+        alert(
+          "Não consegui ler progresso salvo para essa carteira na Arc.\n" +
+            "Vamos começar do zero e você pode salvar depois 👍"
+        );
+      }
+    }
+  }
+
+  // Salva o progresso atual no contrato ArcFarmiaProgress
+  async function saveProgressOnChain() {
+    try {
+      if (!walletAddress) {
+        alert("Conecte sua carteira antes de salvar o progresso.");
+        return;
+      }
+
+      if (typeof window === "undefined" || !window.ethereum) {
+        alert("Carteira Web3 não encontrada (MetaMask / Rabby).");
+        return;
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      const contract = new Contract(
+        SAVE_CONTRACT_ADDRESS,
+        SAVE_CONTRACT_ABI,
+        signer
+      );
+
+      // conta quantas galinhas e vacas temos no estábulo
+      const chickensCount = barnSlots.filter(
+        (s) => s.animalId === "chicken"
+      ).length;
+      const cowsCount = barnSlots.filter((s) => s.animalId === "cow").length;
+
+      const tx = await contract.savePlayer(
+        BigInt(arcCoins),
+        BigInt(xp),
+        Number(level),
+        BigInt(seeds.wheat ?? 0),
+        BigInt(seeds.corn ?? 0),
+        BigInt(seeds.carrot ?? 0),
+        BigInt(produce.egg ?? 0),
+        BigInt(produce.milk ?? 0),
+        BigInt(chickensCount),
+        BigInt(cowsCount)
+      );
+
+      alert(
+        "Enviando transação para salvar progresso na Arc... Assine na sua carteira."
+      );
+      await tx.wait();
+      alert("Progresso salvo na Arc ✅");
+    } catch (err) {
+      console.error("Erro ao salvar progresso na Arc:", err);
+      alert("Erro ao salvar progresso na Arc. Veja o console (F12) para detalhes.");
     }
   }
 
@@ -260,8 +377,10 @@ function App() {
         return;
       }
 
-      const provider = new BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
       if (!accounts || accounts.length === 0) {
         alert("Nenhuma conta encontrada na carteira.");
         return;
@@ -270,10 +389,8 @@ function App() {
       const address = accounts[0];
       setWalletAddress(address);
 
-      // carrega o progresso dessa carteira a partir da chain
-      await loadGameStateFromChain(address);
-
-      alert("Carteira conectada: " + address);
+      // carrega o progresso dessa carteira a partir do contrato de progresso
+      await loadGameStateFromChain(address, { showAlert: true });
     } catch (err) {
       console.error("Erro ao conectar carteira:", err);
       alert("Erro ao conectar carteira. Veja o console (F12) para detalhes.");
@@ -282,13 +399,16 @@ function App() {
 
   function disconnectWallet() {
     setWalletAddress(null);
-    // opcional: reset visual quando desconectar
+    // reset visual quando desconectar
     setArcCoins(50);
     setSeeds({
       wheat: 4,
       corn: 3,
       carrot: 2,
     });
+    setXp(0);
+    setLevel(0);
+    setNextLevelXp(xpForLevelUp(0));
     alert("Carteira desconectada do jogo.");
   }
 
@@ -339,7 +459,6 @@ function App() {
       setEffects((prev) => prev.filter((fx) => fx.id !== id));
     }, 550);
   }
-
 
   function grantXp(amount) {
     if (!amount || amount <= 0) return;
@@ -446,7 +565,8 @@ function App() {
   useEffect(() => {
     function onKey(e) {
       let idx = playerIndex;
-      if (e.key === "ArrowLeft" || e.key === "a") idx = Math.max(0, playerIndex - 1);
+      if (e.key === "ArrowLeft" || e.key === "a")
+        idx = Math.max(0, playerIndex - 1);
       if (e.key === "ArrowRight" || e.key === "d")
         idx = Math.min(TOTAL_TILES - 1, playerIndex + 1);
       if (e.key === "ArrowUp" || e.key === "w")
@@ -459,44 +579,42 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [playerIndex]);
 
-  // shop actions
-    // shop actions helper: compra no contrato ArcFarmia
+  // shop actions helper: compra no contrato ArcFarmia
   async function buySeedOnChain(cropKey, amount) {
-  const onChainId = CROP_ID_ONCHAIN[cropKey];
-  if (onChainId === undefined) {
-    alert("Essa cultura não está configurada no contrato. Ajuste CROP_ID_ONCHAIN.");
-    return;
+    const onChainId = CROP_ID_ONCHAIN[cropKey];
+    if (onChainId === undefined) {
+      alert(
+        "Essa cultura não está configurada no contrato. Ajuste CROP_ID_ONCHAIN."
+      );
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    const { ethereum } = window;
+
+    if (!ethereum) {
+      alert(
+        "Carteira Web3 não encontrada (instale MetaMask ou use Rabby/MetaMask)."
+      );
+      return;
+    }
+
+    const provider = new BrowserProvider(ethereum);
+    const signer = await provider.getSigner();
+
+    const contract = new Contract(ARCFARMIA_ADDRESS, ARCFARMIA_ABI, signer);
+
+    const tx = await contract.buySeeds(onChainId, amount);
+    console.log("Tx enviada (buySeeds):", tx.hash);
+    alert("Transação enviada para a Arc Testnet. Aguarde a confirmação...");
+
+    await tx.wait();
+    console.log("Tx confirmada (buySeeds).");
+    alert(`Sementes compradas com sucesso na ArcFarmia ✅ (x${amount})`);
   }
-
-  if (typeof window === "undefined") return;
-  const { ethereum } = window;
-
-  if (!ethereum) {
-    alert("Carteira Web3 não encontrada (instale MetaMask ou use Rabby/MetaMask).");
-    return;
-  }
-
-  const provider = new BrowserProvider(ethereum);
-  const signer = await provider.getSigner();
-
-  const contract = new Contract(
-    ARCFARMIA_ADDRESS,
-    ARCFARMIA_ABI,
-    signer
-  );
-
-  // 👉 agora usa a quantidade que a gente passar
-  const tx = await contract.buySeeds(onChainId, amount);
-  console.log("Tx enviada (buySeeds):", tx.hash);
-  alert("Transação enviada para a Arc Testnet. Aguarde a confirmação...");
-
-  await tx.wait();
-  console.log("Tx confirmada (buySeeds).");
-  alert(`Sementes compradas com sucesso na ArcFarmia ✅ (x${amount})`);
-}
 
   // shop actions
-    async function buySeed(id) {
+  async function buySeed(id) {
     const crop = cropsById[id];
     if (!crop) return;
 
@@ -511,12 +629,14 @@ function App() {
     }
 
     try {
-      // chama o contrato na Arc com amount = 1
       await buySeedOnChain(id, 1);
 
-      // depois que a tx confirma, recarrega tudo da chain
-      await loadGameStateFromChain(walletAddress);
-
+      // atualiza estado local do jogo
+      setArcCoins((c) => c - crop.buyPrice);
+      setSeeds((old) => ({
+        ...old,
+        [id]: (old[id] ?? 0) + 1,
+      }));
       playSound(sfxShop, 0.5);
     } catch (err) {
       console.error("Erro ao comprar semente:", err);
@@ -524,7 +644,7 @@ function App() {
     }
   }
 
-    async function buySeedPack(id) {
+  async function buySeedPack(id) {
     const crop = cropsById[id];
     if (!crop) return;
 
@@ -544,8 +664,12 @@ function App() {
       // compra 10 seeds no contrato
       await buySeedOnChain(id, 10);
 
-      // recarrega estado real da chain
-      await loadGameStateFromChain(walletAddress);
+      // atualiza estado local
+      setArcCoins((c) => c - totalPrice);
+      setSeeds((old) => ({
+        ...old,
+        [id]: (old[id] ?? 0) + 10,
+      }));
 
       playSound(sfxShop, 0.5);
     } catch (err) {
@@ -554,7 +678,7 @@ function App() {
     }
   }
 
-        async function claimDailySeedsOnChain() {
+  async function claimDailySeedsOnChain() {
     try {
       if (!walletAddress) {
         alert("Conecte sua carteira antes de pegar o daily.");
@@ -577,15 +701,18 @@ function App() {
 
       const tx = await contract.claimDailySeeds();
       console.log("Tx enviada (claimDailySeeds):", tx.hash);
-      alert("Transação de daily enviada para a Arc Testnet. Aguardando confirmação...");
+      alert(
+        "Transação de daily enviada para a Arc Testnet. Aguardando confirmação..."
+      );
 
       await tx.wait();
       console.log("Tx confirmada (claimDailySeeds).");
 
-      // depois da confirmação, recarrega coins + seeds dessa carteira
-      await loadGameStateFromChain(walletAddress);
-
-      alert("Daily reivindicado na Arc! 🎁 (inventário atualizado a partir da chain)");
+      // Por enquanto, apenas informamos que o daily foi pego.
+      // (Se quiser, depois sincronizamos o inventário local com os valores on-chain.)
+      alert(
+        "Daily reivindicado na Arc! 🎁 (em breve o inventário local será atualizado automaticamente com o daily.)"
+      );
     } catch (err) {
       console.error("Erro no claimDailySeeds:", err);
       const raw =
@@ -594,10 +721,6 @@ function App() {
       alert("Erro ao reivindicar o daily na Arc:\n\n" + raw);
     }
   }
-
-
-
-
 
   function sellHarvest(id) {
     const crop = cropsById[id];
@@ -828,7 +951,7 @@ function App() {
               claimedQuests={claimedQuests}
               onClaim={handleClaimQuest}
             />
-              <ShopPanel
+            <ShopPanel
               crops={CROPS}
               arcCoins={arcCoins}
               harvest={harvest}
@@ -842,6 +965,7 @@ function App() {
               walletAddress={walletAddress}
               onConnectWallet={connectWallet}
               onDisconnectWallet={disconnectWallet}
+              onSaveOnChain={saveProgressOnChain}
             />
 
             <BarnPanel
@@ -1005,11 +1129,10 @@ function ShopPanel({
   walletAddress,
   onConnectWallet,
   onDisconnectWallet,
+  onSaveOnChain,
 }) {
-
   return (
-
-        <div className="panel shop">
+    <div className="panel shop">
       <h3>Farm Shop</h3>
       <div className="shop-coins">Arc coins: {arcCoins}</div>
 
@@ -1031,6 +1154,7 @@ function ShopPanel({
             <button onClick={onClaimDailySeeds}>
               Claim daily seeds (on-chain)
             </button>
+            <button onClick={onSaveOnChain}>💾 Save to blockchain</button>
           </div>
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
@@ -1038,13 +1162,16 @@ function ShopPanel({
             <button onClick={onClaimDailySeeds} disabled>
               Claim daily seeds (on-chain)
             </button>
+            <button onClick={onSaveOnChain} disabled>
+              💾 Save to blockchain
+            </button>
           </div>
         )}
       </div>
 
       <div className="shop-section">
         <div className="shop-title">Buy seeds</div>
-                {crops.map((c) => (
+        {crops.map((c) => (
           <div key={c.id} className="shop-row">
             <span>
               {c.emojiSeed} {c.name}
@@ -1057,8 +1184,8 @@ function ShopPanel({
             </div>
           </div>
         ))}
-
       </div>
+
       <div className="shop-section">
         <div className="shop-title">Sell crops</div>
         {crops.map((c) => {
@@ -1069,9 +1196,7 @@ function ShopPanel({
               <span>
                 {c.emojiReady} {c.name} x{amount}
               </span>
-              <span className="shop-price">
-                {c.sellPrice} AC each
-              </span>
+              <span className="shop-price">{c.sellPrice} AC each</span>
               <button disabled={disabled} onClick={() => onSellHarvest(c.id)}>
                 Sell all
               </button>
@@ -1079,6 +1204,7 @@ function ShopPanel({
           );
         })}
       </div>
+
       <div className="shop-section">
         <div className="shop-title">Sell barn products</div>
         {livestockProducts.map((p) => {
@@ -1089,9 +1215,7 @@ function ShopPanel({
               <span>
                 {p.emoji} {p.name} x{amount}
               </span>
-              <span className="shop-price">
-                {p.sellPrice} AC each
-              </span>
+              <span className="shop-price">{p.sellPrice} AC each</span>
               <button disabled={disabled} onClick={() => onSellProduce(p.id)}>
                 Sell all
               </button>
@@ -1143,16 +1267,8 @@ function InventoryModal({ crops, seeds, harvest, produce, arcCoins, onClose }) {
         <div className="inventory-section">
           <div className="inventory-title">Barn products</div>
           <div className="inventory-grid">
-            <InventorySlot
-              label="Egg"
-              emoji="🥚"
-              count={produce.egg ?? 0}
-            />
-            <InventorySlot
-              label="Milk"
-              emoji="🥛"
-              count={produce.milk ?? 0}
-            />
+            <InventorySlot label="Egg" emoji="🥚" count={produce.egg ?? 0} />
+            <InventorySlot label="Milk" emoji="🥛" count={produce.milk ?? 0} />
           </div>
         </div>
       </div>
