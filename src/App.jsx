@@ -1056,8 +1056,8 @@ function App() {
               </div>
 
               <div className="hint">
-                1) Plant · 2) Water · 3) Espera o timer · 4) Harvest & vende no
-                shop para Arc coins.
+                1) Plant · 2) Water · 3) Waiting timer · 4) Harvest & sell in shop
+                for Arc Coins.
               </div>
             </div>
           </section>

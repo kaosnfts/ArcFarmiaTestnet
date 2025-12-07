@@ -1303,19 +1303,19 @@ body {
   color: #ffe9b8;
 }
 
+/* background pixel art */
+
 .loading-bg {
   position: absolute;
   inset: 0;
-  /* a imagem vem via style={{ backgroundImage: `url(...)` }} no JSX */
   background-size: cover;
   background-position: center;
   filter: saturate(1.1) contrast(1.05);
   transform: scale(1.05);
   animation: loading-bg-pan 22s linear infinite alternate;
-
-  /* deixar a arte bem pixelizada */
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  z-index: 0;
 }
 
 .loading-overlay {
@@ -1324,9 +1324,10 @@ body {
   background:
     radial-gradient(circle at 50% 35%, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.9) 100%),
     linear-gradient(to bottom, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.85));
+  z-index: 1;
 }
 
-/* Caixa central */
+/* CARD CENTRAL */
 
 .loading-content {
   position: relative;
@@ -1343,6 +1344,7 @@ body {
     0 0 0 2px rgba(255, 204, 120, 0.25),
     0 0 42px rgba(255, 170, 68, 0.45);
   backdrop-filter: blur(10px);
+  z-index: 2;
 }
 
 /* Logo */
@@ -1411,8 +1413,6 @@ body {
     0 0 30px rgba(255, 166, 40, 0.9);
   position: relative;
   overflow: hidden;
-  /* REMOVE a animação de width */
-  /* animation: loading-bar-pulse 1.4s ease-in-out infinite; */
 }
 
 .loading-progress-inner::after {
@@ -1484,7 +1484,7 @@ body {
   position: absolute;
   inset: -40%;
   background: radial-gradient(circle at 15% 0, rgba(255, 255, 255, 0.8), transparent 50%);
-  opacity: 0.0;
+  opacity: 0;
   pointer-events: none;
   animation: btn-glow 1.9s ease-in-out infinite;
 }
@@ -1500,7 +1500,7 @@ body {
   opacity: 0.9;
 }
 
-/* Fireflies */
+/* Fireflies dentro do card */
 
 .loading-firefly {
   position: absolute;
@@ -1529,6 +1529,117 @@ body {
   bottom: 8%;
   left: 22%;
   animation: firefly 5.4s ease-in-out infinite 0.8s;
+}
+
+/* ====== NPCs GRANDES NO FUNDO DO BACKGROUND ====== */
+/* Ficam “em pé” lá embaixo, em cima do campo, igual ao print */
+
+.loading-characters-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  width: min(980px, 100% - 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}
+
+.loading-characters {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  flex-wrap: nowrap;
+}
+
+/* botão de cada NPC (só o sprite, sem card atrás) */
+.loading-character {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+  position: relative;
+  border-radius: 16px;
+  overflow: visible;
+  transform-origin: bottom center;
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.18s ease-out,
+    filter 0.18s ease-out;
+  opacity: 0.85; /* visíveis, mas levemente suaves */
+}
+
+.loading-character-img {
+  display: block;
+  width: 110px; /* sprites grandes, como no print */
+  height: auto;
+  image-rendering: pixelated;
+}
+
+/* Sam um pouco maior que os outros */
+.loading-character-sam .loading-character-img {
+  width: 140px; /* aumenta ou diminui aqui até ficar perfeito */
+}
+
+/* hover / ativo: ficam bem destacados com glow */
+.loading-character:hover,
+.loading-character.active {
+  opacity: 1;
+  transform: translateY(-6px) scale(1.06);
+  filter:
+    drop-shadow(0 0 8px rgba(0, 0, 0, 0.9))
+    drop-shadow(0 0 16px rgba(255, 230, 170, 0.9));
+}
+
+/* Balão com nome + função do NPC ativo */
+
+.loading-character-bubble {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 221, 148, 0.2), transparent 65%),
+    rgba(9, 9, 11, 0.9);
+  border: 1px solid rgba(250, 204, 21, 0.8);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.9),
+    0 0 18px rgba(250, 204, 21, 0.4);
+  text-align: center;
+  max-width: 520px;
+}
+
+.loading-character-name {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #ffe9b8;
+  margin-bottom: 2px;
+}
+
+.loading-character-role {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 238, 195, 0.9);
+}
+
+/* Responsivo: encolhe sprites no mobile e sobe um pouco a barra */
+
+@media (max-width: 900px) {
+  .loading-characters-bar {
+    bottom: 24px;
+    width: 100%;
+  }
+
+  .loading-characters {
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .loading-character-img {
+    width: 80px;
+  }
 }
 
 /* ===================== ANIMAÇÕES ===================== */
