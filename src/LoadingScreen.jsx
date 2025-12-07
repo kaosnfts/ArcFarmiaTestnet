@@ -10,12 +10,42 @@ import timImg from "./assets/tim.png";
 import simonImg from "./assets/simon.png";
 
 const CHARACTERS = [
-  { id: "claire", name: "Claire Corbett", role: "Group Chief Financial Officer", img: claireImg },
-  { id: "caitlin", name: "Caitlin Read", role: "Chief Commercial Officer", img: caitlinImg },
-  { id: "gnosoulla", name: "Gnosoulla", role: "Chief People & Culture Officer", img: gnosoullaImg },
-  { id: "sam", name: "Sam", role: "Director of Community and Ecosystem at Circle", img: samImg },
-  { id: "tim", name: "Tim", role: "President, Americas", img: timImg },
-  { id: "simon", name: "Simon Foster", role: "Group Chief Executive Officer", img: simonImg },
+  {
+    id: "claire",
+    name: "Claire Corbett",
+    role: "Group Chief Financial Officer",
+    img: claireImg,
+  },
+  {
+    id: "caitlin",
+    name: "Caitlin Read",
+    role: "Chief Commercial Officer",
+    img: caitlinImg,
+  },
+  {
+    id: "gnosoulla",
+    name: "Gnosoulla",
+    role: "Chief People & Culture Officer",
+    img: gnosoullaImg,
+  },
+  {
+    id: "sam",
+    name: "Sam",
+    role: "Director of Community and Ecosystem at Circle",
+    img: samImg,
+  },
+  {
+    id: "tim",
+    name: "Tim",
+    role: "President, Americas",
+    img: timImg,
+  },
+  {
+    id: "simon",
+    name: "Simon Foster",
+    role: "Group Chief Executive Officer",
+    img: simonImg,
+  },
 ];
 
 function LoadingScreen({ onConnect }) {
@@ -24,12 +54,14 @@ function LoadingScreen({ onConnect }) {
 
   return (
     <div className="loading-screen">
+      {/* Fundo pixel art */}
       <div
         className="loading-bg"
         style={{ backgroundImage: `url(${loadingBg})` }}
       />
       <div className="loading-overlay" />
 
+      {/* Card central: logo + connect wallet */}
       <div className="loading-content">
         <div className="loading-logo">
           <span className="loading-logo-arc">ARC</span>
@@ -59,19 +91,22 @@ function LoadingScreen({ onConnect }) {
         <span className="loading-firefly f3" />
       </div>
 
-      {/* NPCs GRANDES NO FUNDO */}
+      {/* NPCs GRANDES NO FUNDO DO BACKGROUND */}
       <div className="loading-characters-bar">
+        <div className="loading-characters-title">
+          <span>ARC NETWORK TEAM</span>
+        </div>
+
         <div className="loading-characters">
           {CHARACTERS.map((char) => (
             <button
               key={char.id}
               type="button"
               className={
-  "loading-character loading-character-" +
-  char.id +
-  (char.id === activeId ? " active" : "")
-}
-
+                "loading-character loading-character-" +
+                char.id +
+                (char.id === activeId ? " active" : "")
+              }
               onClick={() => setActiveId(char.id)}
             >
               <img
@@ -86,7 +121,9 @@ function LoadingScreen({ onConnect }) {
         {activeChar && (
           <div className="loading-character-bubble">
             <div className="loading-character-name">{activeChar.name}</div>
-            <div className="loading-character-role">{activeChar.role}</div>
+            <div className="loading-character-role">
+              {activeChar.role}
+            </div>
           </div>
         )}
       </div>
