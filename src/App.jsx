@@ -18,14 +18,13 @@ import sfxQuest from "./assets/sfx_quest.wav";
 
 import { BrowserProvider, Contract } from "ethers";
 import { ARCFARMIA_ADDRESS, ARCFARMIA_ABI } from "./contractConfig";
-import {
-  SAVE_CONTRACT_ADDRESS,
-  SAVE_CONTRACT_ABI,
-} from "./saveConfig";
+import { SAVE_CONTRACT_ADDRESS, SAVE_CONTRACT_ABI } from "./saveConfig";
 
 const GRID_COLS = 8;
 const GRID_ROWS = 6;
 const TOTAL_TILES = GRID_COLS * GRID_ROWS;
+
+const LOCAL_SAVE_KEY = "arcfarmia_local_save_v1";
 
 // Crop config com tempos em ms
 const CROPS = [
@@ -63,8 +62,8 @@ const CROPS = [
 
 const CROP_ID_ONCHAIN = {
   wheat: 1, // ID do trigo no contrato
-  corn: 2, // ID do milho no contrato
-  carrot: 3, // ID da cenoura no contrato
+  corn: 2,  // ID do milho no contrato
+  carrot: 3 // ID da cenoura no contrato
 };
 
 // Animals & barn products
@@ -164,8 +163,26 @@ function playSound(src, volume = 0.6) {
 }
 
 function xpForLevelUp(level) {
-  // Progressive XP curve: each level needs more XP than the previous
+  // Progressive XP curve: each level needs more XP que o anterior
   return 30 + level * 20 + level * level * 10;
+}
+
+// garante que a quantidade de sementes é sempre número válido >= 0
+function getSeedCount(seedsState, cropId) {
+  if (!seedsState) return 0;
+  const raw = seedsState[cropId];
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
+// garante que a quantidade de colheita é sempre número válido >= 0
+function getHarvestCount(harvestState, cropId) {
+  if (!harvestState) return 0;
+  const raw = harvestState[cropId];
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
 }
 
 function App() {
@@ -218,6 +235,54 @@ function App() {
     for (const a of ANIMALS) m[a.id] = a;
     return m;
   }, []);
+
+  // ------- SNAPSHOT LOCAL (para salvar no localStorage) -------
+  function buildLocalSnapshot() {
+    return {
+      arcCoins,
+      xp,
+      level,
+      nextLevelXp,
+      seeds,
+      harvest,
+      produce,
+      stats,
+      claimedQuests,
+      field,
+      barnSlots,
+    };
+  }
+
+  function applyLocalSnapshot(data) {
+    try {
+      if (!data || typeof data !== "object") return;
+
+      if (typeof data.arcCoins === "number") setArcCoins(data.arcCoins);
+      if (typeof data.xp === "number") setXp(data.xp);
+      if (typeof data.level === "number") {
+        setLevel(data.level);
+        setNextLevelXp(xpForLevelUp(data.level));
+      }
+      if (typeof data.nextLevelXp === "number") {
+        // se quiser respeitar exatamente o que foi salvo
+        setNextLevelXp(data.nextLevelXp);
+      }
+
+      if (data.seeds) setSeeds(data.seeds);
+      if (data.harvest) setHarvest(data.harvest);
+      if (data.produce) setProduce(data.produce);
+      if (data.stats) setStats(data.stats);
+      if (data.claimedQuests) setClaimedQuests(data.claimedQuests);
+      if (Array.isArray(data.field)) setField(data.field);
+      if (Array.isArray(data.barnSlots)) setBarnSlots(data.barnSlots);
+
+      console.log("Snapshot local aplicado:", data);
+    } catch (e) {
+      console.error("Erro ao aplicar snapshot local:", e);
+    }
+  }
+
+  // --------- ON-CHAIN: getPlayer / savePlayer ----------
 
   // Lê o progresso salvo no contrato ArcFarmiaProgress (progresso on-chain)
   async function loadGameStateFromChain(playerAddress, options = {}) {
@@ -272,7 +337,7 @@ function App() {
         return;
       }
 
-      // aplica no estado do jogo
+      // aplica no estado do jogo (inventário on-chain)
       setArcCoins(coins || 50);
       setXp(xpChain);
       setLevel(levelChain);
@@ -412,6 +477,46 @@ function App() {
     alert("Carteira desconectada do jogo.");
   }
 
+  // -------- LOCAL SAVE: carregar quando abrir --------
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const raw = localStorage.getItem(LOCAL_SAVE_KEY);
+      if (!raw) return;
+
+      const data = JSON.parse(raw);
+      console.log("Save local encontrado, aplicando...", data);
+      applyLocalSnapshot(data);
+    } catch (e) {
+      console.error("Erro ao ler save local do localStorage:", e);
+    }
+  }, []);
+
+  // -------- LOCAL SAVE: auto-save sempre que algo importante mudar --------
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const snapshot = buildLocalSnapshot();
+      localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(snapshot));
+      // console.log("Save local atualizado.");
+    } catch (e) {
+      console.error("Erro ao salvar no localStorage:", e);
+    }
+  }, [
+    field,
+    barnSlots,
+    arcCoins,
+    xp,
+    level,
+    nextLevelXp,
+    seeds,
+    harvest,
+    produce,
+    stats,
+    claimedQuests,
+  ]);
+
+  // greeting
   useEffect(() => {
     const id = setInterval(() => setGreeting(getGreeting()), 60_000);
     return () => clearInterval(id);
@@ -506,12 +611,13 @@ function App() {
       if (mode === "plant") {
         if (!crop) return prev;
         if (tile.state !== "empty") return prev;
-        const availableSeeds = seeds[selectedCropId] ?? 0;
+
+        const availableSeeds = getSeedCount(seeds, selectedCropId);
         if (availableSeeds <= 0) return prev;
 
         setSeeds((old) => ({
           ...old,
-          [selectedCropId]: (old[selectedCropId] ?? 0) - 1,
+          [selectedCropId]: getSeedCount(old, selectedCropId) - 1,
         }));
 
         next[i] = {
@@ -541,10 +647,15 @@ function App() {
         if (tile.state !== "ready" || !tile.cropId) return prev;
         const cropData = cropsById[tile.cropId];
 
-        setHarvest((old) => ({
-          ...old,
-          [tile.cropId]: (old[tile.cropId] ?? 0) + 1,
-        }));
+        setHarvest((old) => {
+          const prevCount = getHarvestCount(old, tile.cropId);
+          const newCount = prevCount + 1;
+          console.log("Colheita:", tile.cropId, "=>", newCount);
+          return {
+            ...old,
+            [tile.cropId]: newCount,
+          };
+        });
 
         if (cropData) {
           grantXp(cropData.xpReward);
@@ -635,7 +746,7 @@ function App() {
       setArcCoins((c) => c - crop.buyPrice);
       setSeeds((old) => ({
         ...old,
-        [id]: (old[id] ?? 0) + 1,
+        [id]: getSeedCount(old, id) + 1,
       }));
       playSound(sfxShop, 0.5);
     } catch (err) {
@@ -668,7 +779,7 @@ function App() {
       setArcCoins((c) => c - totalPrice);
       setSeeds((old) => ({
         ...old,
-        [id]: (old[id] ?? 0) + 10,
+        [id]: getSeedCount(old, id) + 10,
       }));
 
       playSound(sfxShop, 0.5);
@@ -693,11 +804,7 @@ function App() {
       const provider = new BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
 
-      const contract = new Contract(
-        ARCFARMIA_ADDRESS,
-        ARCFARMIA_ABI,
-        signer
-      );
+      const contract = new Contract(ARCFARMIA_ADDRESS, ARCFARMIA_ABI, signer);
 
       const tx = await contract.claimDailySeeds();
       console.log("Tx enviada (claimDailySeeds):", tx.hash);
@@ -708,8 +815,7 @@ function App() {
       await tx.wait();
       console.log("Tx confirmada (claimDailySeeds).");
 
-      // Por enquanto, apenas informamos que o daily foi pego.
-      // (Se quiser, depois sincronizamos o inventário local com os valores on-chain.)
+      // em outro momento podemos sincronizar inventário local com on-chain
       alert(
         "Daily reivindicado na Arc! 🎁 (em breve o inventário local será atualizado automaticamente com o daily.)"
       );
@@ -725,7 +831,7 @@ function App() {
   function sellHarvest(id) {
     const crop = cropsById[id];
     if (!crop) return;
-    const amount = harvest[id] ?? 0;
+    const amount = getHarvestCount(harvest, id);
     if (amount <= 0) return;
     const gain = amount * crop.sellPrice;
     setArcCoins((c) => c + gain);
@@ -794,10 +900,8 @@ function App() {
 
       setStats((s) => ({
         ...s,
-        eggsCollected:
-          s.eggsCollected + (animal.produceId === "egg" ? 1 : 0),
-        milkCollected:
-          s.milkCollected + (animal.produceId === "milk" ? 1 : 0),
+        eggsCollected: s.eggsCollected + (animal.produceId === "egg" ? 1 : 0),
+        milkCollected: s.milkCollected + (animal.produceId === "milk" ? 1 : 0),
       }));
 
       const productCfg = LIVESTOCK_PRODUCTS.find(
@@ -916,7 +1020,6 @@ function App() {
                 crops={CROPS}
                 selectedCropId={selectedCropId}
                 onSelect={setSelectedCropId}
-                seeds={seeds}
               />
 
               <div className="field-fence">
@@ -1092,25 +1195,21 @@ function NpcCard({ img, name, text }) {
   );
 }
 
-function CropSelector({ crops, selectedCropId, onSelect, seeds }) {
+function CropSelector({ crops, selectedCropId, onSelect }) {
   return (
     <div className="crop-selector">
-      {crops.map((crop) => {
-        const count = seeds[crop.id] ?? 0;
-        return (
-          <button
-            key={crop.id}
-            className={
-              "crop-btn" + (crop.id === selectedCropId ? " active" : "")
-            }
-            onClick={() => onSelect(crop.id)}
-          >
-            <span className="crop-emoji">{crop.emojiReady}</span>
-            <span className="crop-name">{crop.name}</span>
-            <span className="crop-count">x{count}</span>
-          </button>
-        );
-      })}
+      {crops.map((crop) => (
+        <button
+          key={crop.id}
+          className={
+            "crop-btn" + (crop.id === selectedCropId ? " active" : "")
+          }
+          onClick={() => onSelect(crop.id)}
+        >
+          <span className="crop-emoji">{crop.emojiReady}</span>
+          <span className="crop-name">{crop.name}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -1189,7 +1288,7 @@ function ShopPanel({
       <div className="shop-section">
         <div className="shop-title">Sell crops</div>
         {crops.map((c) => {
-          const amount = harvest[c.id] ?? 0;
+          const amount = getHarvestCount(harvest, c.id);
           const disabled = amount <= 0;
           return (
             <div key={c.id} className="shop-row">
@@ -1246,7 +1345,7 @@ function InventoryModal({ crops, seeds, harvest, produce, arcCoins, onClose }) {
                 key={"seed-" + c.id}
                 label={c.name}
                 emoji={c.emojiSeed}
-                count={seeds[c.id] ?? 0}
+                count={getSeedCount(seeds, c.id)}
               />
             ))}
           </div>
@@ -1259,7 +1358,7 @@ function InventoryModal({ crops, seeds, harvest, produce, arcCoins, onClose }) {
                 key={"harvest-" + c.id}
                 label={c.name}
                 emoji={c.emojiReady}
-                count={harvest[c.id] ?? 0}
+                count={getHarvestCount(harvest, c.id)}
               />
             ))}
           </div>
@@ -1428,11 +1527,8 @@ function BarnSlot({
   const seconds = Math.ceil(leftMs / 1000);
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  const timerLabel = ready
-    ? "Ready!"
-    : m > 0
-    ? `${m}m ${s.toString().padStart(2, "0")}s`
-    : `${s}s`;
+  const timerLabel =
+    ready ? "Ready!" : m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
 
   function handleCollectClick() {
     if (!ready) return;
