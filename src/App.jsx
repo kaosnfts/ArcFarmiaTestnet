@@ -20,6 +20,9 @@ import { BrowserProvider, Contract } from "ethers";
 import { ARCFARMIA_ADDRESS, ARCFARMIA_ABI } from "./contractConfig";
 import { SAVE_CONTRACT_ADDRESS, SAVE_CONTRACT_ABI } from "./saveConfig";
 
+// 👉 IMPORT DA TELA DE LOADING
+import LoadingScreen from "./LoadingScreen";
+
 const GRID_COLS = 8;
 const GRID_ROWS = 6;
 const TOTAL_TILES = GRID_COLS * GRID_ROWS;
@@ -935,6 +938,18 @@ function App() {
   const xpProgressPercent =
     nextLevelXp > 0 ? Math.min(100, Math.floor((xp / nextLevelXp) * 100)) : 0;
 
+  // 👉 SE NÃO TEM CARTEIRA CONECTADA, MOSTRA A TELA DE LOADING
+  if (!walletAddress) {
+    return (
+      <div className={"page-bg time-" + timeOfDay}>
+        <SkyDecor timeOfDay={timeOfDay} />
+        <WeatherOverlay weather={weather} />
+        <LoadingScreen onConnect={connectWallet} />
+      </div>
+    );
+  }
+
+  // 👉 DEPOIS DE CONECTAR, MOSTRA O JOGO NORMAL
   return (
     <div className={"page-bg time-" + timeOfDay}>
       <SkyDecor timeOfDay={timeOfDay} />
@@ -982,7 +997,7 @@ function App() {
               <NpcCard
                 img={timImg}
                 name="Tim"
-                text={`Bom dia / boa tarde! Don't forget to water 💧`}
+                text={`Good morning / Good Afternoon! Don't forget to water 💧`}
               />
             </div>
 
