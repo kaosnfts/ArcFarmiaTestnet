@@ -50,10 +50,24 @@ const CHARACTERS = [
 
 function LoadingScreen({ onConnect }) {
   const [activeId, setActiveId] = useState(CHARACTERS[0].id);
+  const [isFadingOut, setIsFadingOut] = useState(false); // 👈 novo
   const activeChar = CHARACTERS.find((c) => c.id === activeId);
 
+  // 👇 função que cuida do fade + conecta
+  const handleConnectClick = () => {
+    setIsFadingOut(true);          // começa o fade
+
+    setTimeout(() => {
+      onConnect();                 // depois de 800ms (tempo do CSS) vai pro jogo
+    }, 800);
+  };
+
   return (
-    <div className="loading-screen">
+    <div
+      className={
+        "loading-screen" + (isFadingOut ? " loading-screen--fade-out" : "")
+      }
+    >
       {/* Fundo pixel art */}
       <div
         className="loading-bg"
@@ -76,7 +90,7 @@ function LoadingScreen({ onConnect }) {
           <div className="loading-progress-inner" />
         </div>
 
-        <button className="btn-connect-wallet" onClick={onConnect}>
+        <button className="btn-connect-wallet" onClick={handleConnectClick}>
           <span className="btn-connect-glow" />
           <span className="btn-connect-icon">🪙</span>
           <span>CONNECT WALLET</span>
