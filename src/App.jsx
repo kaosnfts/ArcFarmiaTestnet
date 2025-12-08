@@ -959,7 +959,7 @@ function App() {
           <div className="brand">
             <div className="brand-title">ArcFarmia</div>
             <div className="brand-sub">
-              Daily quests · Arc coins · crops & barn
+              This dApp game isn’t for financial purposes and isn’t part of the official Arc Network team — it’s just a simple project in development. Have fun: plant and harvest! 🌱🚜🌾
             </div>
           </div>
           <div className="stats">
@@ -1601,30 +1601,69 @@ function SkyDecor({ timeOfDay }) {
 }
 
 function WeatherOverlay({ weather }) {
+  // gotas de chuva espalhadas pela tela
+  const drops = React.useMemo(
+    () =>
+      Array.from({ length: 70 }, (_, i) => ({
+        id: i,
+        left: `${Math.random() * 100}%`,
+        delay: `${Math.random() * 1.2}s`,
+        duration: 0.7 + Math.random() * 0.6,
+      })),
+    []
+  );
+
+  // “puffs” de neblina
+  const puffs = React.useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, i) => ({
+        id: i,
+        left: `${(i * 7 + Math.random() * 5) % 100}%`,
+        delay: `${Math.random() * 6}s`,
+      })),
+    []
+  );
+
   if (weather === "clear") return null;
-  const drops = Array.from({ length: 60 });
-  const puffs = Array.from({ length: 10 });
+
   return (
     <div className={"weather-overlay " + weather}>
       {weather === "rain" && (
         <>
           <div className="rain-drops">
-            {drops.map((_, i) => (
-              <span key={i} className="rain-drop" />
+            {drops.map((drop) => (
+              <span
+                key={drop.id}
+                className="rain-drop"
+                style={{
+                  left: drop.left,
+                  animationDelay: drop.delay,
+                  animationDuration: `${drop.duration}s`,
+                }}
+              />
             ))}
           </div>
           <div className="lightning-flash" />
         </>
       )}
+
       {weather === "fog" && (
         <div className="fog-puffs">
-          {puffs.map((_, i) => (
-            <span key={i} className="fog-puff" />
+          {puffs.map((puff) => (
+            <span
+              key={puff.id}
+              className="fog-puff"
+              style={{
+                left: puff.left,
+                animationDelay: puff.delay,
+              }}
+            />
           ))}
         </div>
       )}
     </div>
   );
 }
+
 
 export default App;
