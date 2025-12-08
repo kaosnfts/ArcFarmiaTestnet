@@ -2,6 +2,9 @@
 import React, { useState } from "react";
 import loadingBg from "./assets/arc-farmia-loading-bg.png";
 
+// logo do jogo
+import logoInicio from "./assets/logoinicio.png";
+
 import claireImg from "./assets/claire.png";
 import caitlinImg from "./assets/caitlin.png";
 import gnosoullaImg from "./assets/gnosoulla.png";
@@ -50,16 +53,17 @@ const CHARACTERS = [
 
 function LoadingScreen({ onConnect }) {
   const [activeId, setActiveId] = useState(CHARACTERS[0].id);
-  const [isFadingOut, setIsFadingOut] = useState(false); // 👈 novo
+  const [isFadingOut, setIsFadingOut] = useState(false);
   const activeChar = CHARACTERS.find((c) => c.id === activeId);
 
-  // 👇 função que cuida do fade + conecta
   const handleConnectClick = () => {
-    setIsFadingOut(true);          // começa o fade
+    if (isFadingOut) return; // evita spam no botão
+
+    setIsFadingOut(true);
 
     setTimeout(() => {
-      onConnect();                 // depois de 800ms (tempo do CSS) vai pro jogo
-    }, 800);
+      if (onConnect) onConnect();
+    }, 800); // bate com o tempo do fade no CSS
   };
 
   return (
@@ -78,8 +82,11 @@ function LoadingScreen({ onConnect }) {
       {/* Card central: logo + connect wallet */}
       <div className="loading-content">
         <div className="loading-logo">
-          <span className="loading-logo-arc">ARC</span>
-          <span className="loading-logo-farmia">FARMIA</span>
+          <img
+            src={logoInicio}
+            alt="ArcFarmia"
+            className="loading-logo-img"
+          />
         </div>
 
         <div className="loading-subtitle">

@@ -1,11 +1,16 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/App.jsx
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import samImg from "./assets/sam.png";
 import timImg from "./assets/tim.png";
-import sunImg from "./assets/sun.svg";
-import moonImg from "./assets/moon.svg";
-import cloud1Img from "./assets/cloud1.svg";
-import cloud2Img from "./assets/cloud2.svg";
-import cloud3Img from "./assets/cloud3.svg";
+
+// 👉 SKY
+import sunImg from "./assets/sky/sun_pixel.gif";
+import moonImg from "./assets/sky/moon_pixel.gif";
+import cloud1Img from "./assets/sky/cloud1_pixel.gif";
+import cloud2Img from "./assets/sky/cloud2_pixel.gif";
+import cloud3Img from "./assets/sky/cloud3_pixel.gif";
+import birdsImg from "./assets/sky/birds_anim.gif";
+
 import backpackImg from "./assets/backpack.svg";
 
 import sfxPlant from "./assets/sfx_plant.wav";
@@ -15,6 +20,11 @@ import sfxEgg from "./assets/sfx_egg.wav";
 import sfxMilk from "./assets/sfx_milk.wav";
 import sfxShop from "./assets/sfx_shop.wav";
 import sfxQuest from "./assets/sfx_quest.wav";
+
+// 👉 BGM:  (mp3/ogg/wav)
+import bgm1 from "./assets/music/bgm1.mp3";
+import bgm2 from "./assets/music/bgm2.mp3";
+import bgm3 from "./assets/music/bgm3.mp3";
 
 import { BrowserProvider, Contract } from "ethers";
 import { ARCFARMIA_ADDRESS, ARCFARMIA_ABI } from "./contractConfig";
@@ -28,6 +38,13 @@ const GRID_ROWS = 6;
 const TOTAL_TILES = GRID_COLS * GRID_ROWS;
 
 const LOCAL_SAVE_KEY = "arcfarmia_local_save_v1";
+
+// 👉 Lista das trilhas de fundo
+const BGM_TRACKS = [
+  { id: "track1", name: "Chill Field", src: bgm1 },
+  { id: "track2", name: "Sunny Day", src: bgm2 },
+  { id: "track3", name: "Night at the Farm", src: bgm3 },
+];
 
 // Crop config com tempos em ms
 const CROPS = [
@@ -65,8 +82,8 @@ const CROPS = [
 
 const CROP_ID_ONCHAIN = {
   wheat: 1, // ID do trigo no contrato
-  corn: 2,  // ID do milho no contrato
-  carrot: 3 // ID da cenoura no contrato
+  corn: 2, // ID do milho no contrato
+  carrot: 3, // ID da cenoura no contrato
 };
 
 // Animals & barn products
@@ -227,6 +244,12 @@ function App() {
   }));
   const [claimedQuests, setClaimedQuests] = useState(() => ({}));
 
+  // 👉 ESTADO DE MÚSICA (BGM)
+  const [bgmIndex, setBgmIndex] = useState(0);
+  const [bgmVolume, setBgmVolume] = useState(0.5);
+  const [bgmMuted, setBgmMuted] = useState(false);
+  const bgmAudioRef = useRef(null);
+
   const cropsById = useMemo(() => {
     const m = {};
     for (const c of CROPS) m[c.id] = c;
@@ -287,7 +310,6 @@ function App() {
 
   // --------- ON-CHAIN: getPlayer / savePlayer ----------
 
-  // Lê o progresso salvo no contrato ArcFarmiaProgress (progresso on-chain)
   async function loadGameStateFromChain(playerAddress, options = {}) {
     const { showAlert = false } = options;
 
@@ -305,7 +327,6 @@ function App() {
 
       const data = await contract.getPlayer(playerAddress);
 
-      // ethers v6: pode acessar por nome ou índice
       const coins = Number(data.coins ?? data[0] ?? 0);
       const xpChain = Number(data.xp ?? data[1] ?? 0);
       const levelChain = Number(data.level ?? data[2] ?? 0);
@@ -330,7 +351,6 @@ function App() {
         cowsChain === 0;
 
       if (isEmpty) {
-        // nunca salvou nada: mantém defaults locais
         if (showAlert) {
           alert(
             "Nenhum progresso salvo encontrado na Arc para essa carteira.\n" +
@@ -340,7 +360,6 @@ function App() {
         return;
       }
 
-      // aplica no estado do jogo (inventário on-chain)
       setArcCoins(coins || 50);
       setXp(xpChain);
       setLevel(levelChain);
@@ -385,7 +404,6 @@ function App() {
     }
   }
 
-  // Salva o progresso atual no contrato ArcFarmiaProgress
   async function saveProgressOnChain() {
     try {
       if (!walletAddress) {
@@ -407,7 +425,6 @@ function App() {
         signer
       );
 
-      // conta quantas galinhas e vacas temos no estábulo
       const chickensCount = barnSlots.filter(
         (s) => s.animalId === "chicken"
       ).length;
@@ -437,7 +454,6 @@ function App() {
     }
   }
 
-  // Conectar a carteira e carregar progresso on-chain
   async function connectWallet() {
     try {
       if (typeof window === "undefined" || !window.ethereum) {
@@ -457,7 +473,6 @@ function App() {
       const address = accounts[0];
       setWalletAddress(address);
 
-      // carrega o progresso dessa carteira a partir do contrato de progresso
       await loadGameStateFromChain(address, { showAlert: true });
     } catch (err) {
       console.error("Erro ao conectar carteira:", err);
@@ -467,7 +482,6 @@ function App() {
 
   function disconnectWallet() {
     setWalletAddress(null);
-    // reset visual quando desconectar
     setArcCoins(50);
     setSeeds({
       wheat: 4,
@@ -477,6 +491,13 @@ function App() {
     setXp(0);
     setLevel(0);
     setNextLevelXp(xpForLevelUp(0));
+
+    // para a música quando desconectar
+    if (bgmAudioRef.current) {
+      bgmAudioRef.current.pause();
+      bgmAudioRef.current.currentTime = 0;
+    }
+
     alert("Carteira desconectada do jogo.");
   }
 
@@ -495,13 +516,12 @@ function App() {
     }
   }, []);
 
-  // -------- LOCAL SAVE: auto-save sempre que algo importante mudar --------
+  // -------- LOCAL SAVE: auto-save --------
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
       const snapshot = buildLocalSnapshot();
       localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(snapshot));
-      // console.log("Save local atualizado.");
     } catch (e) {
       console.error("Erro ao salvar no localStorage:", e);
     }
@@ -727,7 +747,6 @@ function App() {
     alert(`Sementes compradas com sucesso na ArcFarmia ✅ (x${amount})`);
   }
 
-  // shop actions
   async function buySeed(id) {
     const crop = cropsById[id];
     if (!crop) return;
@@ -745,7 +764,6 @@ function App() {
     try {
       await buySeedOnChain(id, 1);
 
-      // atualiza estado local do jogo
       setArcCoins((c) => c - crop.buyPrice);
       setSeeds((old) => ({
         ...old,
@@ -775,10 +793,8 @@ function App() {
     }
 
     try {
-      // compra 10 seeds no contrato
       await buySeedOnChain(id, 10);
 
-      // atualiza estado local
       setArcCoins((c) => c - totalPrice);
       setSeeds((old) => ({
         ...old,
@@ -818,15 +834,13 @@ function App() {
       await tx.wait();
       console.log("Tx confirmada (claimDailySeeds).");
 
-      // em outro momento podemos sincronizar inventário local com on-chain
       alert(
         "Daily reivindicado na Arc! 🎁 (em breve o inventário local será atualizado automaticamente com o daily.)"
       );
     } catch (err) {
       console.error("Erro no claimDailySeeds:", err);
       const raw =
-        (err && (err.shortMessage || err.reason || err.message)) ||
-        String(err);
+        (err && (err.shortMessage || err.reason || err.message)) || String(err);
       alert("Erro ao reivindicar o daily na Arc:\n\n" + raw);
     }
   }
@@ -938,6 +952,86 @@ function App() {
   const xpProgressPercent =
     nextLevelXp > 0 ? Math.min(100, Math.floor((xp / nextLevelXp) * 100)) : 0;
 
+  // ========== LÓGICA DA MÚSICA DE FUNDO (BGM) ==========
+
+  // cria / troca a faixa quando: conectou carteira ou mudou bgmIndex
+  useEffect(() => {
+    if (!walletAddress) return;
+    const track = BGM_TRACKS[bgmIndex];
+    if (!track) return;
+
+    let audio = bgmAudioRef.current;
+
+    const resolveSrc = (src) => {
+      try {
+        return new URL(src, window.location.href).toString();
+      } catch {
+        return src;
+      }
+    };
+
+    const desiredSrc = resolveSrc(track.src);
+
+    if (!audio) {
+      audio = new Audio(track.src);
+      audio.loop = true;
+      bgmAudioRef.current = audio;
+    } else if (audio.src !== desiredSrc) {
+      audio.pause();
+      audio = new Audio(track.src);
+      audio.loop = true;
+      bgmAudioRef.current = audio;
+    }
+
+    audio.volume = bgmMuted ? 0 : bgmVolume;
+
+    if (!bgmMuted) {
+      audio
+        .play()
+        .catch((err) =>
+          console.log("Autoplay bloqueado pelo navegador (ok):", err)
+        );
+    }
+
+    // não fazer pause aqui pra não reiniciar a cada pequeno update
+  }, [walletAddress, bgmIndex]); // troca de track
+
+  // controla volume / mute sem recriar o áudio
+  useEffect(() => {
+    const audio = bgmAudioRef.current;
+    if (!audio) return;
+    audio.volume = bgmMuted ? 0 : bgmVolume;
+  }, [bgmVolume, bgmMuted]);
+
+  // garante que pare quando desmontar ou desconectar
+  useEffect(() => {
+    if (!walletAddress && bgmAudioRef.current) {
+      bgmAudioRef.current.pause();
+      bgmAudioRef.current.currentTime = 0;
+    }
+    return () => {
+      if (bgmAudioRef.current) {
+        bgmAudioRef.current.pause();
+      }
+    };
+  }, [walletAddress]);
+
+  function handleNextTrack() {
+    setBgmIndex((i) => (i + 1) % BGM_TRACKS.length);
+  }
+
+  function handleVolumeUp() {
+    setBgmVolume((v) => Math.min(1, +(v + 0.1).toFixed(2)));
+  }
+
+  function handleVolumeDown() {
+    setBgmVolume((v) => Math.max(0, +(v - 0.1).toFixed(2)));
+  }
+
+  function handleToggleMute() {
+    setBgmMuted((m) => !m);
+  }
+
   // 👉 SE NÃO TEM CARTEIRA CONECTADA, MOSTRA A TELA DE LOADING
   if (!walletAddress) {
     return (
@@ -959,7 +1053,9 @@ function App() {
           <div className="brand">
             <div className="brand-title">ArcFarmia</div>
             <div className="brand-sub">
-              This dApp game isn’t for financial purposes and isn’t part of the official Arc Network team — it’s just a simple project in development. Have fun: plant and harvest! 🌱🚜🌾
+              This dApp game isn’t for financial purposes and isn’t part of the
+              official Arc Network team — it’s just a simple project in
+              development. Have fun: plant and harvest! 🌱🚜🌾
             </div>
           </div>
           <div className="stats">
@@ -1056,8 +1152,8 @@ function App() {
               </div>
 
               <div className="hint">
-                1) Plant · 2) Water · 3) Waiting timer · 4) Harvest & sell in shop
-                for Arc Coins.
+                1) Plant · 2) Water · 3) Waiting timer · 4) Harvest & sell in
+                shop for Arc Coins.
               </div>
             </div>
           </section>
@@ -1097,6 +1193,19 @@ function App() {
             />
           </section>
         </main>
+
+        {/* 🎵 CONTROLES DE MÚSICA */}
+        <MusicControls
+          currentTrack={BGM_TRACKS[bgmIndex]}
+          trackIndex={bgmIndex}
+          totalTracks={BGM_TRACKS.length}
+          volume={bgmVolume}
+          muted={bgmMuted}
+          onNext={handleNextTrack}
+          onVolumeUp={handleVolumeUp}
+          onVolumeDown={handleVolumeDown}
+          onToggleMute={handleToggleMute}
+        />
 
         <footer className="bottom">
           ArcFarmia · browser prototype for the Arc network · by kAos
@@ -1586,6 +1695,8 @@ function BarnSlot({
   );
 }
 
+// 👉 SkyDecor ARRUMADO (fechando a <div> certinho)
+// Aqui você só troca as imagens importadas lá em cima pelos seus próprios assets.
 function SkyDecor({ timeOfDay }) {
   return (
     <div className="sky-decor">
@@ -1594,14 +1705,19 @@ function SkyDecor({ timeOfDay }) {
       <img src={cloud1Img} className="sky-cloud cloud-1" alt="" />
       <img src={cloud2Img} className="sky-cloud cloud-2" alt="" />
       <img src={cloud3Img} className="sky-cloud cloud-3" alt="" />
-      <div className="sky-birds birds-1">🐦</div>
-      <div className="sky-birds birds-2">🐦🐦</div>
+
+      <div className="sky-birds birds-1">
+        <img src={birdsImg} alt="Birds" />
+      </div>
+      <div className="sky-birds birds-2">
+        <img src={birdsImg} alt="Birds" />
+      </div>
     </div>
   );
 }
 
+
 function WeatherOverlay({ weather }) {
-  // gotas de chuva espalhadas pela tela
   const drops = React.useMemo(
     () =>
       Array.from({ length: 70 }, (_, i) => ({
@@ -1613,7 +1729,6 @@ function WeatherOverlay({ weather }) {
     []
   );
 
-  // “puffs” de neblina
   const puffs = React.useMemo(
     () =>
       Array.from({ length: 14 }, (_, i) => ({
@@ -1665,5 +1780,67 @@ function WeatherOverlay({ weather }) {
   );
 }
 
+// 🎵 componente só de UI pra controlar música
+function MusicControls({
+  currentTrack,
+  trackIndex,
+  totalTracks,
+  volume,
+  muted,
+  onNext,
+  onVolumeUp,
+  onVolumeDown,
+  onToggleMute,
+}) {
+  const volumePercent = Math.round(volume * 100);
+
+  return (
+    <div className="music-controls">
+      <div className="music-controls-info">
+        <span className="music-label">
+          🎵 Music {trackIndex + 1}/{totalTracks}:{" "}
+          {currentTrack?.name || "—"}
+        </span>
+        <span className="music-volume-label">
+          Volume: {muted ? "Muted" : volumePercent + "%"}
+        </span>
+      </div>
+      <div className="music-controls-buttons">
+        <button
+          type="button"
+          className="music-btn"
+          onClick={onVolumeDown}
+          title="Decrease volume"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="music-btn"
+          onClick={onVolumeUp}
+          title="Increase volume"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className={"music-btn" + (muted ? " music-btn--muted" : "")}
+          onClick={onToggleMute}
+          title="Mute / unmute"
+        >
+          {muted ? "Unmute" : "Mute"}
+        </button>
+        <button
+          type="button"
+          className="music-btn"
+          onClick={onNext}
+          title="Next track"
+        >
+          ⏭
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default App;
