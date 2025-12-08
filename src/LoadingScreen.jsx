@@ -90,7 +90,7 @@ function LoadingScreen({ onConnect }) {
         </div>
 
         <div className="loading-subtitle">
-          GROW · HARVEST · INTERACT ON ARC
+          GROW · HARVEST · Arc Testnet
         </div>
 
         <div className="loading-progress">
@@ -103,9 +103,18 @@ function LoadingScreen({ onConnect }) {
           <span>CONNECT WALLET</span>
         </button>
 
-        <div className="loading-tip">
-          CONNECT YOUR WALLET TO ENTER THE FARM 🌾
-        </div>
+        <div className="loading-hints">
+  <div className="loading-tip-main">
+    CONNECT YOUR WALLET TO ENTER THE FARM 🌾
+  </div>
+
+  <div className="loading-tip-sec">
+    <span className="loading-tip-icon">🔐</span>
+    <span>
+      For security, we recommend using a burn wallet address to enter the farm.
+    </span>
+  </div>
+</div>
 
         <span className="loading-firefly f1" />
         <span className="loading-firefly f2" />
