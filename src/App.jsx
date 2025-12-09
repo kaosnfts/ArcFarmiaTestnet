@@ -11,6 +11,11 @@ import cloud2Img from "./assets/sky/cloud2_pixel.gif";
 import cloud3Img from "./assets/sky/cloud3_pixel.gif";
 import birdsImg from "./assets/sky/birds_anim.gif";
 
+import moonPhaseBg1 from "./assets/moonPhases/moon_phase1.png";
+import moonPhaseBg2 from "./assets/moonPhases/moon_phase2.png";
+import moonPhaseBg3 from "./assets/moonPhases/moon_phase3.png";
+import moonPhaseBg4 from "./assets/moonPhases/moon_phase4.png";
+
 import backpackImg from "./assets/backpack.svg";
 
 import sfxPlant from "./assets/sfx_plant.wav";
@@ -173,6 +178,15 @@ function getTimeOfDayTag() {
   return "night";
 }
 
+// 👉 Fases da lua (bem simples: 4 fases pelo dia do mês)
+function getMoonPhase() {
+  const today = new Date();
+  const day = today.getDate();
+  const index = (day - 1) % 4;
+  const labels = ["New moon", "First quarter", "Full moon", "Last quarter"];
+  return { index, label: labels[index] };
+}
+
 function playSound(src, volume = 0.6) {
   if (!src) return;
   try {
@@ -223,6 +237,7 @@ function App() {
   const [selectedCropId, setSelectedCropId] = useState("wheat");
   const [now, setNow] = useState(Date.now());
   const [effects, setEffects] = useState([]);
+  const [moonPhase, setMoonPhase] = useState(() => getMoonPhase());
   const [timeOfDay, setTimeOfDay] = useState(getTimeOfDayTag());
   const [weather, setWeather] = useState("clear");
   const [showInventory, setShowInventory] = useState(false);
@@ -545,7 +560,7 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
-  // clock + time of day + random weather
+  // clock + time of day + random weather + moon phase
   useEffect(() => {
     const id = setInterval(() => {
       setNow(Date.now());
@@ -557,6 +572,7 @@ function App() {
         }
         return prev;
       });
+      setMoonPhase(getMoonPhase());
     }, 1000);
     return () => clearInterval(id);
   }, []);
@@ -1036,6 +1052,7 @@ function App() {
   if (!walletAddress) {
     return (
       <div className={"page-bg time-" + timeOfDay}>
+        <MoonBackground phaseIndex={moonPhase.index} timeOfDay={timeOfDay} />
         <SkyDecor timeOfDay={timeOfDay} />
         <WeatherOverlay weather={weather} />
         <LoadingScreen onConnect={connectWallet} />
@@ -1046,6 +1063,7 @@ function App() {
   // 👉 DEPOIS DE CONECTAR, MOSTRA O JOGO NORMAL
   return (
     <div className={"page-bg time-" + timeOfDay}>
+      <MoonBackground phaseIndex={moonPhase.index} timeOfDay={timeOfDay} />
       <SkyDecor timeOfDay={timeOfDay} />
       <WeatherOverlay weather={weather} />
       <div className="app-root">
@@ -1071,6 +1089,10 @@ function App() {
               <div className="xp-small">
                 {xp}/{nextLevelXp} XP
               </div>
+            </div>
+            <div className="moon-phase-tag">
+              <span className="moon-icon">🌙</span>
+              <span>{moonPhase.label}</span>
             </div>
             <button
               className={"backpack-btn" + (showInventory ? " open" : "")}
@@ -1159,39 +1181,42 @@ function App() {
           </section>
 
           <section className="right">
-            <QuestPanel
-              quests={DAILY_QUESTS}
-              stats={stats}
-              claimedQuests={claimedQuests}
-              onClaim={handleClaimQuest}
-            />
-            <ShopPanel
-              crops={CROPS}
-              arcCoins={arcCoins}
-              harvest={harvest}
-              produce={produce}
-              livestockProducts={LIVESTOCK_PRODUCTS}
-              onBuySeed={buySeed}
-              onBuySeedPack={buySeedPack}
-              onClaimDailySeeds={claimDailySeedsOnChain}
-              onSellHarvest={sellHarvest}
-              onSellProduce={sellProduce}
-              walletAddress={walletAddress}
-              onConnectWallet={connectWallet}
-              onDisconnectWallet={disconnectWallet}
-              onSaveOnChain={saveProgressOnChain}
-            />
+  <div className="right-top">
+    <QuestPanel
+      quests={DAILY_QUESTS}
+      stats={stats}
+      claimedQuests={claimedQuests}
+      onClaim={handleClaimQuest}
+    />
+    <ShopPanel
+      crops={CROPS}
+      arcCoins={arcCoins}
+      harvest={harvest}
+      produce={produce}
+      livestockProducts={LIVESTOCK_PRODUCTS}
+      onBuySeed={buySeed}
+      onBuySeedPack={buySeedPack}
+      onClaimDailySeeds={claimDailySeedsOnChain}
+      onSellHarvest={sellHarvest}
+      onSellProduce={sellProduce}
+      walletAddress={walletAddress}
+      onConnectWallet={connectWallet}
+      onDisconnectWallet={disconnectWallet}
+      onSaveOnChain={saveProgressOnChain}
+    />
+  </div>
 
-            <BarnPanel
-              barnSlots={barnSlots}
-              animalsById={animalsById}
-              now={now}
-              arcCoins={arcCoins}
-              produce={produce}
-              onBuyAnimal={handleBuyAnimal}
-              onCollectProduce={handleCollectProduce}
-            />
-          </section>
+  <BarnPanel
+    barnSlots={barnSlots}
+    animalsById={animalsById}
+    now={now}
+    arcCoins={arcCoins}
+    produce={produce}
+    onBuyAnimal={handleBuyAnimal}
+    onCollectProduce={handleCollectProduce}
+  />
+</section>
+
         </main>
 
         {/* 🎵 CONTROLES DE MÚSICA */}
@@ -1695,8 +1720,7 @@ function BarnSlot({
   );
 }
 
-// 👉 SkyDecor ARRUMADO (fechando a <div> certinho)
-// Aqui você só troca as imagens importadas lá em cima pelos seus próprios assets.
+// 👉 Fundo do céu (sol, lua pequena, nuvens, pássaros)
 function SkyDecor({ timeOfDay }) {
   return (
     <div className="sky-decor">
@@ -1716,6 +1740,21 @@ function SkyDecor({ timeOfDay }) {
   );
 }
 
+// 👉 Background principal das fases da lua
+function MoonBackground({ phaseIndex, timeOfDay }) {
+  const backgrounds = [moonPhaseBg1, moonPhaseBg2, moonPhaseBg3, moonPhaseBg4];
+  const src = backgrounds[phaseIndex] || backgrounds[0];
+
+  return (
+    <div
+      className={
+        "moon-bg moon-phase-" + (phaseIndex + 1) + " time-" + timeOfDay
+      }
+    >
+      <img src={src} alt="Moon phase background" />
+    </div>
+  );
+}
 
 function WeatherOverlay({ weather }) {
   const drops = React.useMemo(
